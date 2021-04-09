@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
-const { JWT_SECRET } = require('../secrets'); // use this secret!
+const { JWT_SECRET } = require('../secrets'); // !! use this secret!
+const Users = require('../users/users-model');
+const bcrypt = require('bcryptjs');
 
 const restricted = (req, res, next) => {
 	/*
@@ -58,9 +60,16 @@ const only = (role_name) => (req, res, next) => {
 
     * Pull the decoded token from the req object, to avoid verifying it again!
   */
+	return function (req, res, next) {
+		if ((req?.decodedJwt?.role || '') === role_name) {
+			next();
+		} else {
+			res.status(403).json({ message: 'This is not for you' });
+		}
+	};
 };
 
-const checkUsernameExists = (req, res, next) => {
+const checkUsernameExists = async (req, res, next) => {
 	/*
 	 * If the username in req.body does NOT exist in the database
 	 * status 401
@@ -68,6 +77,17 @@ const checkUsernameExists = (req, res, next) => {
 	 *   "message": "Invalid credentials"
 	 * }
 	 */
+	try {
+		let { username, password } = req.body;
+		const user = await Users.findBy({ username }).first();
+		if (user && bcrypt.compareSync(password, user.password)) {
+			next();
+		} else {
+			res.status(401).json({ message: 'Invalid credentials' });
+		}
+	} catch (err) {
+		next(err);
+	}
 };
 
 const validateRoleName = (req, res, next) => {
@@ -89,6 +109,23 @@ const validateRoleName = (req, res, next) => {
     *   "message": "Role name can not be longer than 32 chars"
     * }
   */
+	try {
+		let { role_name } = req.body;
+		const role = role_name.trim();
+		if (!role || role === ' ') {
+			role_name = 'student';
+			next();
+		} else if (role === 'admin') {
+			next({ apiCode: 422, apiMessage: 'Role name can not be admin' });
+		} else if (role.length > 32) {
+			next({
+				apiCode: 422,
+				apiMessage: 'Role name can not be longer than 32 chars',
+			});
+		}
+	} catch (err) {
+		next(err);
+	}
 };
 
 module.exports = {
